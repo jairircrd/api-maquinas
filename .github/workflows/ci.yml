@@ -1,0 +1,64 @@
+name: API Máquinas - CI
+on:
+  push:
+    branches: [main, develop, 'feature/**']
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  testes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: monitoramento_maquinas
+          POSTGRES_USER: ci_test
+          POSTGRES_PASSWORD: ci_test_only
+        ports:
+          - 5434:5432
+        options: >-
+          --health-cmd "pg_isready -U ci_test -d monitoramento_maquinas"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DB_URL: jdbc:postgresql://localhost:5434/monitoramento_maquinas
+      DB_USER: ci_test
+      DB_PASSWORD: ci_test_only
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Compilar e executar testes
+        run: mvn -B clean verify
+      - name: Publicar evidências JUnit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: resultados-maven
+          path: target/surefire-reports/
+          if-no-files-found: warn
+      - name: Construir imagem de implantação
+        run: docker build -t api-maquinas:ci .
+      - name: Verificar aplicação empacotada
+        run: |
+          docker run -d --name api-maquinas-ci --network host --memory 512m \
+            -e DB_URL="$DB_URL" -e DB_USER="$DB_USER" -e DB_PASSWORD="$DB_PASSWORD" api-maquinas:ci
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:8080/status; then break; fi
+            sleep 2
+          done
+          curl -fsS http://localhost:8080/status
+          curl -fsS http://localhost:8080/versao | grep -qx '1.0.0'
+          curl -fsS http://localhost:8080/maquinas
+          curl -fsS http://localhost:8080/producao
+      - name: Logs do container
+        if: always()
+        run: docker logs api-maquinas-ci 2>&1 || true
