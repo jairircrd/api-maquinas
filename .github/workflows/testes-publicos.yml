@@ -1,0 +1,23 @@
+name: API Máquinas - testes públicos
+on:
+  push:
+    branches: ['feature/testes-api-publica']
+    paths: ['scripts/testar_api_publica.py', '.github/workflows/testes-publicos.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  http:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Testar endpoints publicados
+        run: python3 scripts/testar_api_publica.py
+      - name: Guardar evidências HTTP
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evidencias-api-publica
+          path: evidencias-api-publica.json
+          if-no-files-found: warn
